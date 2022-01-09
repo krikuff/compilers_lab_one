@@ -49,6 +49,14 @@ struct CompilationContext
     std::vector<Symbol> symbolTable_;
 };
 
+enum class ProcessingResult
+{
+    Success = 0,
+    StateIsNotFinal,
+    EndOfTextNotReached,
+    IncorrectPdaState,
+};
+
 template<typename C>
 class PushdownAutomaton
 {
@@ -60,8 +68,17 @@ class PushdownAutomaton
     using StateMap = std::map<std::string, State>;
 
 public:
+    // @brief Регистрация состояния автомата
+    // @param from Имя состояния
+    // @param isFinal конечное ли состояние TODO: переделать на enum, чтоб понятно было читать вызов
+    // @param transition функция перехода
     typename StateMap::iterator RegisterTransition(std::string const& from, bool isFinal, Transition<C>&& transition);
-    void ProcessText(std::string const& text, std::string const& startingState, C& context);
+
+    // @brief Обработать текст автоматом
+    // @param text Входные данные
+    // @param startingState начальное состояние автомата
+    // @param context объект контекста состояний
+    ProcessingResult ProcessText(std::string const& text, std::string const& startingState, C& context);
 
 private:
     // Перейти в следующее состояние
@@ -109,21 +126,41 @@ bool PushdownAutomaton<C>::NextState(char symbol, C& context)
 }
 
 template <typename C>
-void PushdownAutomaton<C>::ProcessText(std::string const& text,std::string const& startingState, C& context)
+ProcessingResult PushdownAutomaton<C>::ProcessText(std::string const& text, std::string const& startingState, C& context)
 {
+    using enum ProcessingResult;
+
     currentState_ = states_.find(startingState);
     if(currentState_ == states_.end())
     {
         throw PdaError("Invalid starting state");
     }
 
-    for(auto& symbol : text)
+    auto currentSymbol = text.begin();
+    for(; currentSymbol != text.end(); ++currentSymbol)
     {
-        if(!NextState(symbol, context))
+        if( !NextState(*currentSymbol, context) )
         {
             break;
         }
     }
+
+    ProcessingResult ret = Success;
+    bool endReached = ( currentSymbol == text.end() );
+    bool stateIsFinal = currentState_->second.isFinal;
+    if (!endReached && !stateIsFinal)
+    {
+        ret = IncorrectPdaState;
+    }
+    else if( !endReached )
+    {
+        ret = EndOfTextNotReached;
+    }
+    else if( !stateIsFinal )
+    {
+        ret = StateIsNotFinal;
+    }
+    return ret;
 }
 
 } // namespace compilers
