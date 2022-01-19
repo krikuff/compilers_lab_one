@@ -151,7 +151,7 @@ void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
             {
                 return MakeState(sn::NumInt);
             }
-            return MakeError("Should be folowed by identifier, number or parentheses.");
+            return MakeError("Should be an identifier, a number or (.");
         });
 
     pda.RegisterTransition(sn::Id, true,
@@ -174,7 +174,7 @@ void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
                 stack.pop();
                 return MakeState(sn::P);
             }
-            return MakeError("Should be followed by operator or closing parentheses.");
+            return MakeError("Should be an operator or ).");
         });
     pda.RegisterTransition(sn::P, true,
         [](char symbol, StackOfChars& stack, Compilation&) -> TransitionResult
@@ -192,7 +192,7 @@ void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
             {
                 return MakeState(sn::Q);
             }
-            return MakeError("Should be followed by operator or closing parentheses.");
+            return MakeError("Should be an operator or ).");
         });
 
     pda.RegisterTransition(sn::NumInt, true,
@@ -223,7 +223,7 @@ void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
             {
                 return MakeState(sn::ExpLetter);
             }
-            return MakeError("Integer should either be followed by operator or parentheses or become float with E or \".\".");
+            return MakeError("Integer should either be an operator or ) or become a float with E or \".\".");
         });
 
     pda.RegisterTransition(sn::Dot, false,
@@ -260,7 +260,7 @@ void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
             {
                 return MakeState(sn::ExpLetter);
             }
-            return MakeError("Decimal number should either be followed by operator or parentheses or become scientific with \"e\".");
+            return MakeError("Decimal number should either be an operator or ) or become a scientific with \"e\".");
         });
 
     pda.RegisterTransition(sn::ExpLetter, false,
@@ -284,7 +284,7 @@ void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
             {
                 return MakeState(sn::Exp);
             }
-            return MakeError("Must be followed by number.");
+            return MakeError("Must be a number.");
         });
 
     pda.RegisterTransition(sn::Exp, true,
@@ -307,7 +307,7 @@ void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
             {
                 return MakeState(sn::Q);
             }
-            return MakeError("Should be followed by operator or parentheses.");
+            return MakeError("Should be an operator or ).");
         });
 }
 
