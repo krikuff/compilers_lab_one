@@ -8,9 +8,10 @@ add_compile_options(-Wall -Wextra -Werror)
 include_directories(${CMAKE_SOURCE_DIR})
 
 set(HEADERS
-    pda.h
+    compilation.h
     errors.h
     helpers.h
+    pda.h
     )
 set(SOURCES
     helpers.cpp

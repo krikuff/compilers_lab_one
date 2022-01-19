@@ -14,10 +14,11 @@ namespace tusur
 namespace compilers
 {
 
-struct MaybeStackItem : public std::optional<char>
+template<typename I>
+struct MaybeStackItem : public std::optional<I>
 {
-    using std::optional<char>::optional;
-    static MaybeStackItem FromTop(std::stack<char>& stack)
+    using std::optional<I>::optional;
+    static MaybeStackItem FromTop(std::stack<I>& stack)
     {
         if( stack.empty() )
         {
@@ -31,23 +32,12 @@ struct MaybeStackItem : public std::optional<char>
 };
 
 // Результат перехода: следующее состояние и то, что надо положить на стек, либо ничего если переход невозможен
-using TransitionResult = std::optional<std::pair< std::string, MaybeStackItem >>;
+template<typename I>
+using TransitionResult = std::optional<std::pair< std::string, MaybeStackItem<I> >>;
 
 // Переход: функция, принимающая считанный символ, верхушку стека и контекст компиляции
-template<typename C>
-using Transition = std::function< TransitionResult( char, MaybeStackItem, C&) >;
-
-// FIXME: в другой файл все, что не PDA
-struct Symbol
-{
-    std::string name;
-};
-
-struct CompilationContext
-{
-    Symbol currentSymbol;
-    std::vector<Symbol> symbolTable_;
-};
+template<typename C, typename I>
+using Transition = std::function< TransitionResult<I>( char, MaybeStackItem<I>, C&) >;
 
 enum class ProcessingResult
 {
@@ -57,12 +47,12 @@ enum class ProcessingResult
     IncorrectPdaState,
 };
 
-template<typename C>
+template<typename C, typename I>
 class PushdownAutomaton
 {
     struct State
     {
-        Transition<C> transition;
+        Transition<C, I> transition;
         bool isFinal;
     };
     using StateMap = std::map<std::string, State>;
@@ -72,7 +62,7 @@ public:
     // @param from Имя состояния
     // @param isFinal конечное ли состояние TODO: переделать на enum, чтоб понятно было читать вызов
     // @param transition функция перехода
-    typename StateMap::iterator RegisterTransition(std::string const& from, bool isFinal, Transition<C>&& transition);
+    typename StateMap::iterator RegisterTransition(std::string const& from, bool isFinal, Transition<C, I>&& transition);
 
     // @brief Обработать текст автоматом
     // @param text Входные данные
@@ -86,7 +76,7 @@ private:
     bool NextState(char symbol, C& context);
 
 private:
-    std::stack<char> stack_;
+    std::stack<I> stack_;
     StateMap states_;
     typename StateMap::iterator currentState_;
 };
@@ -94,17 +84,17 @@ private:
 
 // Имплементация
 
-template <typename C>
-typename PushdownAutomaton<C>::StateMap::iterator
-PushdownAutomaton<C>::RegisterTransition(std::string const& from, bool isFinal, Transition<C>&& transition)
+template <typename C, typename I>
+typename PushdownAutomaton<C, I>::StateMap::iterator
+PushdownAutomaton<C, I>::RegisterTransition(std::string const& from, bool isFinal, Transition<C, I>&& transition)
 {
     return states_.emplace(std::pair{ from, State{std::move(transition), isFinal} }).first;
 }
 
-template<typename C>
-bool PushdownAutomaton<C>::NextState(char symbol, C& context)
+template<typename C, typename I>
+bool PushdownAutomaton<C, I>::NextState(char symbol, C& context)
 {
-    TransitionResult transitionResult = currentState_->second.transition( symbol, MaybeStackItem::FromTop(stack_), context );
+    auto transitionResult = currentState_->second.transition( symbol, MaybeStackItem<I>::FromTop(stack_), context );
     if( !transitionResult )
     {
         return false;
@@ -125,8 +115,8 @@ bool PushdownAutomaton<C>::NextState(char symbol, C& context)
     return true;
 }
 
-template <typename C>
-ProcessingResult PushdownAutomaton<C>::ProcessText(std::string const& text, std::string const& startingState, C& context)
+template <typename C, typename I>
+ProcessingResult PushdownAutomaton<C, I>::ProcessText(std::string const& text, std::string const& startingState, C& context)
 {
     using enum ProcessingResult;
 

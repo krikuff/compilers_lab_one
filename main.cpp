@@ -1,5 +1,7 @@
 #include <iostream>
+#include <fstream>
 
+#include <compilation.h>
 #include <error.h>
 #include <helpers.h>
 #include <pda.h>
@@ -40,14 +42,17 @@ std::string PdaResultToString(ProcessingResult const& r)
 }
 } // namespace anonymous
 
-void RegisterLabOneStates(PushdownAutomaton<CompilationContext>& pda)
+using MaybeChar = MaybeStackItem<char>;
+using TransitionResultC = TransitionResult<char>;
+
+void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
 {
     namespace sn = state_names;
     using std::pair, std::nullopt;
 #define ONLY_STATE(state) pair{state, nullopt}
 
     pda.RegisterTransition(sn::Begin, false,
-        [](char symbol, MaybeStackItem, CompilationContext) -> TransitionResult
+        [](char symbol, MaybeChar, Compilation) -> TransitionResultC
         {
             if( std::isspace(symbol) )
             {
@@ -62,7 +67,7 @@ void RegisterLabOneStates(PushdownAutomaton<CompilationContext>& pda)
         });
 
     pda.RegisterTransition(sn::IdLvalueRest, false,
-        [](char symbol, MaybeStackItem, CompilationContext) -> TransitionResult
+        [](char symbol, MaybeChar, Compilation) -> TransitionResultC
         {
             if( helpers::is_alnum_us(symbol) )
             {
@@ -81,7 +86,7 @@ void RegisterLabOneStates(PushdownAutomaton<CompilationContext>& pda)
         });
 
     pda.RegisterTransition(sn::LeftWhitespace, false,
-        [](char symbol, MaybeStackItem, CompilationContext) -> TransitionResult
+        [](char symbol, MaybeChar, Compilation) -> TransitionResultC
         {
             if( std::isspace(symbol) )
             {
@@ -94,7 +99,7 @@ void RegisterLabOneStates(PushdownAutomaton<CompilationContext>& pda)
             return nullopt;
         });
     pda.RegisterTransition(sn::Q, false,
-        [](char symbol, MaybeStackItem, CompilationContext) -> TransitionResult
+        [](char symbol, MaybeChar, Compilation) -> TransitionResultC
         {
             if( symbol == '(' )
             {
@@ -116,7 +121,7 @@ void RegisterLabOneStates(PushdownAutomaton<CompilationContext>& pda)
         });
 
     pda.RegisterTransition(sn::Id, true,
-        [](char symbol, MaybeStackItem stackTop, CompilationContext) -> TransitionResult
+        [](char symbol, MaybeChar stackTop, Compilation) -> TransitionResultC
         {
             if( helpers::is_alnum_us(symbol) )
             {
@@ -137,7 +142,7 @@ void RegisterLabOneStates(PushdownAutomaton<CompilationContext>& pda)
             return nullopt;
         });
     pda.RegisterTransition(sn::P, true,
-        [](char symbol, MaybeStackItem stackTop, CompilationContext) -> TransitionResult
+        [](char symbol, MaybeChar stackTop, Compilation) -> TransitionResultC
         {
             if( std::isspace(symbol) )
             {
@@ -155,7 +160,7 @@ void RegisterLabOneStates(PushdownAutomaton<CompilationContext>& pda)
         });
 
     pda.RegisterTransition(sn::NumInt, true,
-        [](char symbol, MaybeStackItem stackTop, CompilationContext) -> TransitionResult
+        [](char symbol, MaybeChar stackTop, Compilation) -> TransitionResultC
         {
             if( std::isdigit(symbol) )
             {
@@ -185,7 +190,7 @@ void RegisterLabOneStates(PushdownAutomaton<CompilationContext>& pda)
         });
 
     pda.RegisterTransition(sn::Dot, false,
-        [](char symbol, MaybeStackItem, CompilationContext) -> TransitionResult
+        [](char symbol, MaybeChar, Compilation) -> TransitionResultC
         {
             if( std::isdigit(symbol) )
             {
@@ -195,7 +200,7 @@ void RegisterLabOneStates(PushdownAutomaton<CompilationContext>& pda)
         });
 
     pda.RegisterTransition(sn::NumFrac, true,
-        [](char symbol, MaybeStackItem stackTop, CompilationContext) -> TransitionResult
+        [](char symbol, MaybeChar stackTop, Compilation) -> TransitionResultC
         {
             if( std::isdigit(symbol) )
             {
@@ -221,7 +226,7 @@ void RegisterLabOneStates(PushdownAutomaton<CompilationContext>& pda)
         });
 
     pda.RegisterTransition(sn::ExpLetter, false,
-        [](char symbol, MaybeStackItem, CompilationContext) -> TransitionResult
+        [](char symbol, MaybeChar, Compilation) -> TransitionResultC
         {
             if( std::isdigit(symbol) )
             {
@@ -235,7 +240,7 @@ void RegisterLabOneStates(PushdownAutomaton<CompilationContext>& pda)
         });
 
     pda.RegisterTransition(sn::ExpSign, false,
-        [](char symbol, MaybeStackItem, CompilationContext) -> TransitionResult
+        [](char symbol, MaybeChar, Compilation) -> TransitionResultC
         {
             if( std::isdigit(symbol) )
             {
@@ -245,7 +250,7 @@ void RegisterLabOneStates(PushdownAutomaton<CompilationContext>& pda)
         });
 
     pda.RegisterTransition(sn::Exp, true,
-        [](char symbol, MaybeStackItem stackTop, CompilationContext) -> TransitionResult
+        [](char symbol, MaybeChar stackTop, Compilation) -> TransitionResultC
         {
             if( std::isdigit(symbol) )
             {
@@ -269,16 +274,52 @@ void RegisterLabOneStates(PushdownAutomaton<CompilationContext>& pda)
 #undef ONLY_STATE
 }
 
-int main()
+struct ProgramData
+{
+    std::fstream inputFile;
+};
+
+ProgramData ProcessArgs(int argc, char** argv)
+{
+    ProgramData data;
+    for( int i = 1; i < argc; ++i )
+    {
+        std::string arg(argv[i]);
+        // обработка -h и прочих
+
+        if( !data.inputFile.is_open() )
+        {
+            data.inputFile.open(arg);
+            if( !data.inputFile.good() )
+            {
+                throw std::runtime_error("Couldn't open file");
+            }
+        }
+    }
+
+    return data;
+}
+
+int main(int argc, char** argv)
 {
     try
     {
-        CompilationContext context;
-        PushdownAutomaton<CompilationContext> pda;
+        auto programData = ProcessArgs(argc, argv);
+
+        Compilation context;
+        PushdownAutomaton<Compilation, char> pda;
         RegisterLabOneStates(pda);
 
         std::string input;
-        std::getline(std::cin, input);
+        if( programData.inputFile.is_open() )
+        {
+            std::getline(programData.inputFile, input);
+        }
+        else
+        {
+            std::getline(std::cin, input);
+        }
+
         auto result = pda.ProcessText(input, state_names::Begin, context);
         std::cout << PdaResultToString(result) << std::endl;
 
