@@ -14,20 +14,27 @@ namespace tusur
 namespace compilers
 {
 
-// Результат перехода: следующее состояние либо ничего, если переход невозможен
-using TransitionResult = std::optional< std::string >;
+// Результат перехода. В результате перехода можно получить либо имя следующего состояния, либо текст ошибки.
+// Булевый флаг true, если строка -- имя состояния.
+using TransitionResult = std::pair<bool, std::string>;
 
-// Переход: функция, принимающая считанный символ, стек и контекст состояний
+// Функция перехода. Принимает считанный символ, стек и контекст состояний.
 template<typename C, typename I>
 using Transition = std::function< TransitionResult( char, std::stack<I>&, C&) >;
 
-using PdaResult = std::pair<int, std::string::const_iterator>;
 enum PdaFlags: int
 {
     Success             = 0,
     StateIsNotFinal     = 1 << 0,
     EndOfTextNotReached = 1 << 1,
     StackIsNotEmpty     = 1 << 2,
+};
+
+struct PdaResult
+{
+    int flags;
+    std::string::const_iterator errorPosition;
+    std::string errorText;
 };
 
 template<typename C, typename I>
@@ -48,7 +55,8 @@ public:
     typename StateMap::iterator RegisterTransition(std::string const& from, bool isFinal, Transition<C, I>&& transition);
 
     // @brief Обработать текст автоматом
-    // @param text Входные данные
+    // @param textBegin Итератор начала строки входных данных // TODO: неконсистентно как-то. Перейти бы везде на ranges
+    // @param textEnd Итератор конца строки входных данных
     // @param startingState начальное состояние автомата
     // @param context объект контекста состояний
     PdaResult ProcessText(std::string::const_iterator textBegin, std::string::const_iterator textEnd,
@@ -56,8 +64,8 @@ public:
 
 private:
     // Перейти в следующее состояние
-    // true если переход возможен, иначе false
-    bool NextState(char symbol, C& context);
+    // Возвращает строку ошибки, если переход невозможен, иначе ничего
+    std::optional<std::string> NextState(char symbol, C& context);
 
 private:
     std::stack<I> stack_;
@@ -76,27 +84,26 @@ PushdownAutomaton<C, I>::RegisterTransition(std::string const& from, bool isFina
 }
 
 template<typename C, typename I>
-bool PushdownAutomaton<C, I>::NextState(char symbol, C& context)
+std::optional<std::string> PushdownAutomaton<C, I>::NextState(char symbol, C& context)
 {
-    auto transitionResult = currentState_->second.transition( symbol, stack_, context );
-    if( !transitionResult )
+    auto [transitionSuccessfull, stateOrErr] = currentState_->second.transition( symbol, stack_, context );
+    if( !transitionSuccessfull )
     {
-        return false;
+        return stateOrErr;
     }
 
-    auto nextStateName = transitionResult.value();
-
-    currentState_ = states_.find(nextStateName);
+    currentState_ = states_.find(stateOrErr);
     if( currentState_ == states_.end() )
     {
         throw InvalidState();
     }
 
-    return true;
+    return std::nullopt;
 }
 
 template <typename C, typename I>
-PdaResult PushdownAutomaton<C, I>::ProcessText(std::string::const_iterator textBegin, std::string::const_iterator textEnd,
+PdaResult PushdownAutomaton<C, I>::ProcessText(std::string::const_iterator textBegin,
+                                               std::string::const_iterator textEnd,
                                                std::string const& startingState, C& context)
 {
     using enum PdaFlags;
@@ -107,11 +114,14 @@ PdaResult PushdownAutomaton<C, I>::ProcessText(std::string::const_iterator textB
         throw PdaError("Invalid starting state");
     }
 
+    std::string error;
     auto currentSymbol = textBegin;
     for(; currentSymbol != textEnd; ++currentSymbol)
     {
-        if( !NextState(*currentSymbol, context) )
+        if( auto errorText = NextState(*currentSymbol, context);
+            errorText.has_value() )
         {
+            error = errorText.value();
             break;
         }
     }
@@ -129,7 +139,7 @@ PdaResult PushdownAutomaton<C, I>::ProcessText(std::string::const_iterator textB
     {
         ret |= StackIsNotEmpty;
     }
-    return std::pair{ret, currentSymbol};
+    return {ret, currentSymbol, error};
 }
 
 } // namespace compilers
