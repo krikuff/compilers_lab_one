@@ -14,37 +14,21 @@ namespace tusur
 namespace compilers
 {
 
+// Результат перехода: следующее состояние либо ничего, если переход невозможен
 template<typename I>
-struct MaybeStackItem : public std::optional<I>
-{
-    using std::optional<I>::optional;
-    static MaybeStackItem FromTop(std::stack<I>& stack)
-    {
-        if( stack.empty() )
-        {
-            return std::nullopt;
-        }
+using TransitionResult = std::optional< std::string >;
 
-        auto ret = stack.top();
-        stack.pop();
-        return ret;
-    }
-};
-
-// Результат перехода: следующее состояние и то, что надо положить на стек, либо ничего если переход невозможен
-template<typename I>
-using TransitionResult = std::optional<std::pair< std::string, MaybeStackItem<I> >>;
-
-// Переход: функция, принимающая считанный символ, верхушку стека и контекст компиляции
+// Переход: функция, принимающая считанный символ, стек и контекст состояний
 template<typename C, typename I>
-using Transition = std::function< TransitionResult<I>( char, MaybeStackItem<I>, C&) >;
+using Transition = std::function< TransitionResult<I>( char, std::stack<I>&, C&) >;
 
-enum class ProcessingResult
+using PdaResult = std::pair<int, std::string::const_iterator>; // TODO: сделать итератор константным, по-хорошему
+enum ProcessingResult: int
 {
-    Success = 0,
-    StateIsNotFinal,
-    EndOfTextNotReached,
-    IncorrectPdaState,
+    Success             = 0,
+    StateIsNotFinal     = 1 << 0,
+    EndOfTextNotReached = 1 << 1,
+    StackIsNotEmpty     = 1 << 2,
 };
 
 template<typename C, typename I>
@@ -68,7 +52,8 @@ public:
     // @param text Входные данные
     // @param startingState начальное состояние автомата
     // @param context объект контекста состояний
-    ProcessingResult ProcessText(std::string const& text, std::string const& startingState, C& context);
+    PdaResult ProcessText(std::string::const_iterator textBegin, std::string::const_iterator textEnd,
+                          std::string const& startingState, C& context);
 
 private:
     // Перейти в следующее состояние
@@ -94,13 +79,13 @@ PushdownAutomaton<C, I>::RegisterTransition(std::string const& from, bool isFina
 template<typename C, typename I>
 bool PushdownAutomaton<C, I>::NextState(char symbol, C& context)
 {
-    auto transitionResult = currentState_->second.transition( symbol, MaybeStackItem<I>::FromTop(stack_), context );
+    auto transitionResult = currentState_->second.transition( symbol, stack_, context );
     if( !transitionResult )
     {
         return false;
     }
 
-    auto[nextStateName, stackTop] = transitionResult.value();
+    auto nextStateName = transitionResult.value();
 
     currentState_ = states_.find(nextStateName);
     if( currentState_ == states_.end() )
@@ -108,15 +93,12 @@ bool PushdownAutomaton<C, I>::NextState(char symbol, C& context)
         throw InvalidState();
     }
 
-    if( stackTop )
-    {
-        stack_.push( stackTop.value() );
-    }
     return true;
 }
 
 template <typename C, typename I>
-ProcessingResult PushdownAutomaton<C, I>::ProcessText(std::string const& text, std::string const& startingState, C& context)
+PdaResult PushdownAutomaton<C, I>::ProcessText(std::string::const_iterator textBegin, std::string::const_iterator textEnd,
+                                               std::string const& startingState, C& context)
 {
     using enum ProcessingResult;
 
@@ -126,8 +108,8 @@ ProcessingResult PushdownAutomaton<C, I>::ProcessText(std::string const& text, s
         throw PdaError("Invalid starting state");
     }
 
-    auto currentSymbol = text.begin();
-    for(; currentSymbol != text.end(); ++currentSymbol)
+    auto currentSymbol = textBegin;
+    for(; currentSymbol != textEnd; ++currentSymbol)
     {
         if( !NextState(*currentSymbol, context) )
         {
@@ -135,22 +117,20 @@ ProcessingResult PushdownAutomaton<C, I>::ProcessText(std::string const& text, s
         }
     }
 
-    ProcessingResult ret = Success;
-    bool endReached = ( currentSymbol == text.end() );
-    bool stateIsFinal = currentState_->second.isFinal;
-    if (!endReached && !stateIsFinal)
+    int ret = Success;
+    if( currentSymbol != textEnd )
     {
-        ret = IncorrectPdaState;
+        ret |= EndOfTextNotReached;
     }
-    else if( !endReached )
+    if( !currentState_->second.isFinal )
     {
-        ret = EndOfTextNotReached;
+        ret |= StateIsNotFinal;
     }
-    else if( !stateIsFinal )
+    if( !stack_.empty() )
     {
-        ret = StateIsNotFinal;
+        ret |= StackIsNotEmpty;
     }
-    return ret;
+    return std::pair{ret, currentSymbol};
 }
 
 } // namespace compilers

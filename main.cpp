@@ -26,252 +26,280 @@ namespace state_names
     const std::string Exp            = "Exp";
 } // namespace state_names
 
-std::string PdaResultToString(ProcessingResult const& r)
+std::string PdaResultToString(std::string& input, PdaResult res, bool inputIsAtTerminal)
 {
-    switch(r)
+    std::string error;
+    if( !inputIsAtTerminal )
     {
-        case ProcessingResult::Success:
-            return "Success";
-        case ProcessingResult::EndOfTextNotReached:
-            return "EndOfTextNotReached";
-        case ProcessingResult::StateIsNotFinal:
-            return "StateIsNotFinal";
-        case ProcessingResult::IncorrectPdaState:
-            return "IncorrectPdaState";
+        error += input + "\n";
     }
+
+    auto [flags, iter] = res;
+    if( flags == ProcessingResult::Success )
+    {
+        error += "Success";
+    }
+    else
+    {
+        const size_t symbolPos = iter - input.begin();
+
+        for( size_t i = 0; i < symbolPos - 1; ++i )
+        {
+            error.push_back(' ');
+        }
+        error += "^ ";
+
+        if( flags & ProcessingResult::StateIsNotFinal )
+        {
+            error += "StateIsNotFinal ";
+        }
+        if( flags & ProcessingResult::EndOfTextNotReached )
+        {
+            error += "EndOfTextNotReached ";
+        }
+        if( flags & ProcessingResult::StackIsNotEmpty )
+        {
+            error += "StackIsNotEmpty ";
+        }
+    }
+    return error;
 }
+
 } // namespace anonymous
 
-using MaybeChar = MaybeStackItem<char>;
+using StackOfChars = std::stack<char>;
 using TransitionResultC = TransitionResult<char>;
 
 void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
 {
     namespace sn = state_names;
     using std::pair, std::nullopt;
-#define ONLY_STATE(state) pair{state, nullopt}
 
     pda.RegisterTransition(sn::Begin, false,
-        [](char symbol, MaybeChar, Compilation) -> TransitionResultC
+        [](char symbol, StackOfChars&, Compilation&) -> TransitionResultC
         {
             if( std::isspace(symbol) )
             {
-                return ONLY_STATE(sn::Begin);
+                return sn::Begin;
             }
             else if( helpers::is_alpha_us(symbol) )
             {
                 // context.currentSymbol.name.push_back(symbol);
-                return ONLY_STATE(sn::IdLvalueRest);
+                return sn::IdLvalueRest;
             }
             return nullopt;
         });
 
     pda.RegisterTransition(sn::IdLvalueRest, false,
-        [](char symbol, MaybeChar, Compilation) -> TransitionResultC
+        [](char symbol, StackOfChars&, Compilation&) -> TransitionResultC
         {
             if( helpers::is_alnum_us(symbol) )
             {
                 // context.currentSymbol.name.push_back(symbol);
-                return ONLY_STATE(sn::IdLvalueRest);
+                return sn::IdLvalueRest;
             }
             else if( std::isspace(symbol) )
             {
-                return ONLY_STATE(sn::LeftWhitespace);
+                return sn::LeftWhitespace;
             }
             else if( symbol == '=' )
             {
-                return ONLY_STATE(sn::Q);
+                return sn::Q;
             }
             return nullopt;
         });
 
     pda.RegisterTransition(sn::LeftWhitespace, false,
-        [](char symbol, MaybeChar, Compilation) -> TransitionResultC
+        [](char symbol, StackOfChars&, Compilation&) -> TransitionResultC
         {
             if( std::isspace(symbol) )
             {
-                return ONLY_STATE(sn::LeftWhitespace);
+                return sn::LeftWhitespace;
             }
             else if( symbol == '=' )
             {
-                return ONLY_STATE(sn::Q);
+                return sn::Q;
             }
             return nullopt;
         });
     pda.RegisterTransition(sn::Q, false,
-        [](char symbol, MaybeChar, Compilation) -> TransitionResultC
+        [](char symbol, StackOfChars& stack, Compilation&) -> TransitionResultC
         {
             if( symbol == '(' )
             {
-                return pair{sn::Q, '('};
+                stack.emplace('(');
+                return sn::Q;
             }
             else if( std::isspace(symbol) )
             {
-                return ONLY_STATE(sn::Q);
+                return sn::Q;
             }
             else if( helpers::is_alpha_us(symbol) )
             {
-                return ONLY_STATE(sn::Id);
+                return sn::Id;
             }
             else if( std::isdigit(symbol) )
             {
-                return ONLY_STATE(sn::NumInt);
+                return sn::NumInt;
             }
             return nullopt;
         });
 
     pda.RegisterTransition(sn::Id, true,
-        [](char symbol, MaybeChar stackTop, Compilation) -> TransitionResultC
+        [](char symbol, StackOfChars& stack, Compilation&) -> TransitionResultC
         {
             if( helpers::is_alnum_us(symbol) )
             {
-                return ONLY_STATE(sn::Id);
+                return sn::Id;
             }
             else if( symbol == '*' || symbol == '+' )
             {
-                return ONLY_STATE(sn::Q);
+                return sn::Q;
             }
             else if( std::isspace(symbol) )
             {
-                return ONLY_STATE(sn::P);
+                return sn::P;
             }
-            else if( symbol == ')' && stackTop.has_value() && stackTop.value() == '(' )
+            else if( symbol == ')' && !stack.empty() && stack.top() == '(' )
             {
-                return ONLY_STATE(sn::P);
+                stack.pop();
+                return sn::P;
             }
             return nullopt;
         });
     pda.RegisterTransition(sn::P, true,
-        [](char symbol, MaybeChar stackTop, Compilation) -> TransitionResultC
+        [](char symbol, StackOfChars& stack, Compilation&) -> TransitionResultC
         {
             if( std::isspace(symbol) )
             {
-                return ONLY_STATE(sn::P);
+                return sn::P;
             }
-            else if( symbol == ')' && stackTop.has_value() && stackTop.value() == '(' )
+            else if( symbol == ')' && !stack.empty() && stack.top() == '(' )
             {
-                return ONLY_STATE(sn::P);
+                stack.pop();
+                return sn::P;
             }
             else if( symbol == '*' || symbol == '+' )
             {
-                return ONLY_STATE(sn::Q);
+                return sn::Q;
             }
             return nullopt;
         });
 
     pda.RegisterTransition(sn::NumInt, true,
-        [](char symbol, MaybeChar stackTop, Compilation) -> TransitionResultC
+        [](char symbol, StackOfChars& stack, Compilation&) -> TransitionResultC
         {
             if( std::isdigit(symbol) )
             {
-                return ONLY_STATE(sn::NumInt);
+                return sn::NumInt;
             }
             else if( symbol == '*' || symbol == '+' )
             {
-                return ONLY_STATE(sn::Q);
+                return sn::Q;
             }
-            else if( symbol == ')' && stackTop.has_value() && stackTop.value() == '(' )
+            else if( symbol == ')' && !stack.empty() && stack.top() == '(' )
             {
-                return ONLY_STATE(sn::P);
+                stack.pop();
+                return sn::P;
             }
             else if( std::isspace(symbol) )
             {
-                return ONLY_STATE(sn::P);
+                return sn::P;
             }
             else if( symbol == '.' )
             {
-                return ONLY_STATE(sn::Dot);
+                return sn::Dot;
             }
             else if( symbol == 'e' || symbol == 'E' )
             {
-                return ONLY_STATE(sn::ExpLetter);
+                return sn::ExpLetter;
             }
             return nullopt;
         });
 
     pda.RegisterTransition(sn::Dot, false,
-        [](char symbol, MaybeChar, Compilation) -> TransitionResultC
+        [](char symbol, StackOfChars&, Compilation&) -> TransitionResultC
         {
             if( std::isdigit(symbol) )
             {
-                return ONLY_STATE(sn::NumFrac);
+                return sn::NumFrac;
             }
             return nullopt;
         });
 
     pda.RegisterTransition(sn::NumFrac, true,
-        [](char symbol, MaybeChar stackTop, Compilation) -> TransitionResultC
+        [](char symbol, StackOfChars& stack, Compilation&) -> TransitionResultC
         {
             if( std::isdigit(symbol) )
             {
-                return ONLY_STATE(sn::NumFrac);
+                return sn::NumFrac;
             }
             else if( symbol == '*' || symbol == '+' )
             {
-                return ONLY_STATE(sn::Q);
+                return sn::Q;
             }
-            else if( symbol == ')' && stackTop.has_value() && stackTop.value() == '(' )
+            else if( symbol == ')' && !stack.empty() && stack.top() == '(' )
             {
-                return ONLY_STATE(sn::P);
+                stack.pop();
+                return sn::P;
             }
             else if( std::isspace(symbol) )
             {
-                return ONLY_STATE(sn::P);
+                return sn::P;
             }
             else if( symbol == 'e' || symbol == 'E' )
             {
-                return ONLY_STATE(sn::ExpLetter);
+                return sn::ExpLetter;
             }
             return nullopt;
         });
 
     pda.RegisterTransition(sn::ExpLetter, false,
-        [](char symbol, MaybeChar, Compilation) -> TransitionResultC
+        [](char symbol, StackOfChars&, Compilation&) -> TransitionResultC
         {
             if( std::isdigit(symbol) )
             {
-                return ONLY_STATE(sn::Exp);
+                return sn::Exp;
             }
             else if( symbol == '+' || symbol == '-' )
             {
-                return ONLY_STATE(sn::ExpSign);
+                return sn::ExpSign;
             }
             return nullopt;
         });
 
     pda.RegisterTransition(sn::ExpSign, false,
-        [](char symbol, MaybeChar, Compilation) -> TransitionResultC
+        [](char symbol, StackOfChars&, Compilation&) -> TransitionResultC
         {
             if( std::isdigit(symbol) )
             {
-                return ONLY_STATE(sn::Exp);
+                return sn::Exp;
             }
             return nullopt;
         });
 
     pda.RegisterTransition(sn::Exp, true,
-        [](char symbol, MaybeChar stackTop, Compilation) -> TransitionResultC
+        [](char symbol, StackOfChars& stack, Compilation&) -> TransitionResultC
         {
             if( std::isdigit(symbol) )
             {
-                return ONLY_STATE(sn::Exp);
+                return sn::Exp;
             }
             else if( std::isspace(symbol) )
             {
-                return ONLY_STATE(sn::P);
+                return sn::P;
             }
-            else if( symbol == ')' && stackTop.has_value() && stackTop.value() == '(' )
+            else if( symbol == ')' && !stack.empty() && stack.top() == '(' )
             {
-                return ONLY_STATE(sn::P);
+                stack.pop();
+                return sn::P;
             }
             else if( symbol == '*' || symbol == '+' )
             {
-                return ONLY_STATE(sn::Q);
+                return sn::Q;
             }
             return nullopt;
         });
-
-#undef ONLY_STATE
 }
 
 struct ProgramData
@@ -311,6 +339,7 @@ int main(int argc, char** argv)
         RegisterLabOneStates(pda);
 
         std::string input;
+        bool inputIsAtTerminal = false;
         if( programData.inputFile.is_open() )
         {
             std::getline(programData.inputFile, input);
@@ -318,10 +347,11 @@ int main(int argc, char** argv)
         else
         {
             std::getline(std::cin, input);
+            inputIsAtTerminal = true;
         }
 
-        auto result = pda.ProcessText(input, state_names::Begin, context);
-        std::cout << PdaResultToString(result) << std::endl;
+        auto result = pda.ProcessText(input.cbegin(), input.cend(), state_names::Begin, context);
+        std::cout << PdaResultToString(input, result, inputIsAtTerminal) << std::endl;
 
         return 0;
     }
