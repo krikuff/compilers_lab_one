@@ -15,15 +15,14 @@ namespace compilers
 {
 
 // Результат перехода: следующее состояние либо ничего, если переход невозможен
-template<typename I>
 using TransitionResult = std::optional< std::string >;
 
 // Переход: функция, принимающая считанный символ, стек и контекст состояний
 template<typename C, typename I>
-using Transition = std::function< TransitionResult<I>( char, std::stack<I>&, C&) >;
+using Transition = std::function< TransitionResult( char, std::stack<I>&, C&) >;
 
-using PdaResult = std::pair<int, std::string::const_iterator>; // TODO: сделать итератор константным, по-хорошему
-enum ProcessingResult: int
+using PdaResult = std::pair<int, std::string::const_iterator>;
+enum PdaFlags: int
 {
     Success             = 0,
     StateIsNotFinal     = 1 << 0,
@@ -100,7 +99,7 @@ template <typename C, typename I>
 PdaResult PushdownAutomaton<C, I>::ProcessText(std::string::const_iterator textBegin, std::string::const_iterator textEnd,
                                                std::string const& startingState, C& context)
 {
-    using enum ProcessingResult;
+    using enum PdaFlags;
 
     currentState_ = states_.find(startingState);
     if(currentState_ == states_.end())

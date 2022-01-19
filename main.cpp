@@ -35,7 +35,7 @@ std::string PdaResultToString(std::string& input, PdaResult res, bool inputIsAtT
     }
 
     auto [flags, iter] = res;
-    if( flags == ProcessingResult::Success )
+    if( flags == PdaFlags::Success )
     {
         error += "Success";
     }
@@ -49,15 +49,15 @@ std::string PdaResultToString(std::string& input, PdaResult res, bool inputIsAtT
         }
         error += "^ ";
 
-        if( flags & ProcessingResult::StateIsNotFinal )
+        if( flags & PdaFlags::StateIsNotFinal )
         {
             error += "StateIsNotFinal ";
         }
-        if( flags & ProcessingResult::EndOfTextNotReached )
+        if( flags & PdaFlags::EndOfTextNotReached )
         {
             error += "EndOfTextNotReached ";
         }
-        if( flags & ProcessingResult::StackIsNotEmpty )
+        if( flags & PdaFlags::StackIsNotEmpty )
         {
             error += "StackIsNotEmpty ";
         }
@@ -68,7 +68,6 @@ std::string PdaResultToString(std::string& input, PdaResult res, bool inputIsAtT
 } // namespace anonymous
 
 using StackOfChars = std::stack<char>;
-using TransitionResultC = TransitionResult<char>;
 
 void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
 {
@@ -76,7 +75,7 @@ void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
     using std::pair, std::nullopt;
 
     pda.RegisterTransition(sn::Begin, false,
-        [](char symbol, StackOfChars&, Compilation&) -> TransitionResultC
+        [](char symbol, StackOfChars&, Compilation&) -> TransitionResult
         {
             if( std::isspace(symbol) )
             {
@@ -91,7 +90,7 @@ void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
         });
 
     pda.RegisterTransition(sn::IdLvalueRest, false,
-        [](char symbol, StackOfChars&, Compilation&) -> TransitionResultC
+        [](char symbol, StackOfChars&, Compilation&) -> TransitionResult
         {
             if( helpers::is_alnum_us(symbol) )
             {
@@ -110,7 +109,7 @@ void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
         });
 
     pda.RegisterTransition(sn::LeftWhitespace, false,
-        [](char symbol, StackOfChars&, Compilation&) -> TransitionResultC
+        [](char symbol, StackOfChars&, Compilation&) -> TransitionResult
         {
             if( std::isspace(symbol) )
             {
@@ -123,7 +122,7 @@ void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
             return nullopt;
         });
     pda.RegisterTransition(sn::Q, false,
-        [](char symbol, StackOfChars& stack, Compilation&) -> TransitionResultC
+        [](char symbol, StackOfChars& stack, Compilation&) -> TransitionResult
         {
             if( symbol == '(' )
             {
@@ -146,7 +145,7 @@ void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
         });
 
     pda.RegisterTransition(sn::Id, true,
-        [](char symbol, StackOfChars& stack, Compilation&) -> TransitionResultC
+        [](char symbol, StackOfChars& stack, Compilation&) -> TransitionResult
         {
             if( helpers::is_alnum_us(symbol) )
             {
@@ -168,7 +167,7 @@ void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
             return nullopt;
         });
     pda.RegisterTransition(sn::P, true,
-        [](char symbol, StackOfChars& stack, Compilation&) -> TransitionResultC
+        [](char symbol, StackOfChars& stack, Compilation&) -> TransitionResult
         {
             if( std::isspace(symbol) )
             {
@@ -187,7 +186,7 @@ void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
         });
 
     pda.RegisterTransition(sn::NumInt, true,
-        [](char symbol, StackOfChars& stack, Compilation&) -> TransitionResultC
+        [](char symbol, StackOfChars& stack, Compilation&) -> TransitionResult
         {
             if( std::isdigit(symbol) )
             {
@@ -218,7 +217,7 @@ void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
         });
 
     pda.RegisterTransition(sn::Dot, false,
-        [](char symbol, StackOfChars&, Compilation&) -> TransitionResultC
+        [](char symbol, StackOfChars&, Compilation&) -> TransitionResult
         {
             if( std::isdigit(symbol) )
             {
@@ -228,7 +227,7 @@ void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
         });
 
     pda.RegisterTransition(sn::NumFrac, true,
-        [](char symbol, StackOfChars& stack, Compilation&) -> TransitionResultC
+        [](char symbol, StackOfChars& stack, Compilation&) -> TransitionResult
         {
             if( std::isdigit(symbol) )
             {
@@ -255,7 +254,7 @@ void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
         });
 
     pda.RegisterTransition(sn::ExpLetter, false,
-        [](char symbol, StackOfChars&, Compilation&) -> TransitionResultC
+        [](char symbol, StackOfChars&, Compilation&) -> TransitionResult
         {
             if( std::isdigit(symbol) )
             {
@@ -269,7 +268,7 @@ void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
         });
 
     pda.RegisterTransition(sn::ExpSign, false,
-        [](char symbol, StackOfChars&, Compilation&) -> TransitionResultC
+        [](char symbol, StackOfChars&, Compilation&) -> TransitionResult
         {
             if( std::isdigit(symbol) )
             {
@@ -279,7 +278,7 @@ void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
         });
 
     pda.RegisterTransition(sn::Exp, true,
-        [](char symbol, StackOfChars& stack, Compilation&) -> TransitionResultC
+        [](char symbol, StackOfChars& stack, Compilation&) -> TransitionResult
         {
             if( std::isdigit(symbol) )
             {
