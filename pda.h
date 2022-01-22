@@ -14,9 +14,8 @@ namespace tusur
 namespace compilers
 {
 
-// Результат перехода. В результате перехода можно получить либо имя следующего состояния, либо текст ошибки.
-// Булевый флаг true, если строка -- имя состояния.
-using TransitionResult = std::pair<bool, std::string>;
+// Результат перехода. Ничего, если переход невозможен, либо имя следующего состояния.
+using TransitionResult = std::optional<std::string>;
 
 // Функция перехода. Принимает считанный символ, стек и контекст состояний.
 template<typename C, typename I>
@@ -34,7 +33,6 @@ struct PdaResult
 {
     int flags;
     std::string::const_iterator errorPosition;
-    std::string errorText;
 };
 
 template<typename C, typename I>
@@ -64,8 +62,8 @@ public:
 
 private:
     // Перейти в следующее состояние
-    // Возвращает строку ошибки, если переход невозможен, иначе ничего
-    std::optional<std::string> NextState(char symbol, C& context);
+    // true, если переход произошел
+    bool NextState(char symbol, C& context);
 
 private:
     std::stack<I> stack_;
@@ -84,21 +82,21 @@ PushdownAutomaton<C, I>::RegisterTransition(std::string const& from, bool isFina
 }
 
 template<typename C, typename I>
-std::optional<std::string> PushdownAutomaton<C, I>::NextState(char symbol, C& context)
+bool PushdownAutomaton<C, I>::NextState(char symbol, C& context)
 {
-    auto [transitionSuccessfull, stateOrErr] = currentState_->second.transition( symbol, stack_, context );
-    if( !transitionSuccessfull )
+    auto nextStateName = currentState_->second.transition( symbol, stack_, context );
+    if( !nextStateName )
     {
-        return stateOrErr;
+        return false;
     }
 
-    currentState_ = states_.find(stateOrErr);
+    currentState_ = states_.find( nextStateName.value() );
     if( currentState_ == states_.end() )
     {
         throw InvalidState();
     }
 
-    return std::nullopt;
+    return true;
 }
 
 template <typename C, typename I>
@@ -108,20 +106,17 @@ PdaResult PushdownAutomaton<C, I>::ProcessText(std::string::const_iterator textB
 {
     using enum PdaFlags;
 
-    currentState_ = states_.find(startingState);
-    if(currentState_ == states_.end())
+    currentState_ = states_.find( startingState );
+    if( currentState_ == states_.end() )
     {
         throw PdaError("Invalid starting state");
     }
 
-    std::string error;
     auto currentSymbol = textBegin;
     for(; currentSymbol != textEnd; ++currentSymbol)
     {
-        if( auto errorText = NextState(*currentSymbol, context);
-            errorText.has_value() )
+        if( !NextState(*currentSymbol, context) )
         {
-            error = errorText.value();
             break;
         }
     }
@@ -139,7 +134,7 @@ PdaResult PushdownAutomaton<C, I>::ProcessText(std::string::const_iterator textB
     {
         ret |= StackIsNotEmpty;
     }
-    return {ret, currentSymbol, error};
+    return {ret, currentSymbol};
 }
 
 } // namespace compilers

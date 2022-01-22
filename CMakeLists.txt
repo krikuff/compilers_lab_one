@@ -14,6 +14,7 @@ set(HEADERS
     pda.h
     )
 set(SOURCES
+    compilation.cpp
     helpers.cpp
     main.cpp
     )

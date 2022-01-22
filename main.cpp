@@ -26,7 +26,31 @@ namespace state_names
     const std::string Exp            = "Exp";
 } // namespace state_names
 
-std::string InterpretPdaResult(std::string& input, PdaResult res, bool inputIsAtTerminal)
+std::string PdaFlagsToString(int flags)
+{
+    if( flags == PdaFlags::Success )
+    {
+        return "Success";
+    }
+
+    std::string ret;
+    if( flags & PdaFlags::StateIsNotFinal )
+    {
+        ret += "StateIsNotFinal ";
+    }
+    if( flags & PdaFlags::EndOfTextNotReached )
+    {
+        ret += "EndOfTextNotReached ";
+    }
+    if( flags & PdaFlags::StackIsNotEmpty )
+    {
+        ret += "StackIsNotEmpty ";
+    }
+
+    return ret;
+}
+
+std::string InterpretPdaResult(std::string& input, PdaResult res, std::optional<std::string> error, bool inputIsAtTerminal)
 {
     std::string output;
     if( !inputIsAtTerminal )
@@ -34,34 +58,24 @@ std::string InterpretPdaResult(std::string& input, PdaResult res, bool inputIsAt
         output += input + "\n";
     }
 
-    auto [flags, iter, error] = res;
+    auto [flags, iter] = res;
     if( flags == PdaFlags::Success )
     {
         output += "Success";
+        return output;
     }
-    else
+
+    const size_t symbolPos = iter - input.begin();
+    for( size_t i = 0; i < symbolPos; ++i )
     {
-        const size_t symbolPos = iter - input.begin();
-
-        for( size_t i = 0; i < symbolPos; ++i )
-        {
-            output.push_back(' ');
-        }
-        output += "^ " + error + " PDA flags: ";
-
-        if( flags & PdaFlags::StateIsNotFinal )
-        {
-            output += "StateIsNotFinal ";
-        }
-        if( flags & PdaFlags::EndOfTextNotReached )
-        {
-            output += "EndOfTextNotReached ";
-        }
-        if( flags & PdaFlags::StackIsNotEmpty )
-        {
-            output += "StackIsNotEmpty ";
-        }
+        output.push_back(' ');
     }
+
+    const std::string errorMsg = error.has_value()
+                                 ? " " + error.value()
+                                 : "";
+    output += "^" + errorMsg + " PDA flags: " + PdaFlagsToString(flags);
+
     return output;
 }
 
@@ -69,245 +83,247 @@ std::string InterpretPdaResult(std::string& input, PdaResult res, bool inputIsAt
 
 using StackOfChars = std::stack<char>;
 
-std::pair<bool, std::string> MakeState(std::string const& stateName)
-{
-    return {true, stateName};
-}
-
-std::pair<bool, std::string> MakeError(std::string const& errorText)
-{
-    return {false, errorText};
-}
-
 void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
 {
     namespace sn = state_names;
     using std::pair, std::nullopt;
 
     pda.RegisterTransition(sn::Begin, false,
-        [](char symbol, StackOfChars&, Compilation&) -> TransitionResult
+        [](char symbol, StackOfChars&, Compilation& compilation) -> TransitionResult
         {
             if( std::isspace(symbol) )
             {
-                return MakeState(sn::Begin);
+                return sn::Begin;
             }
             else if( helpers::is_alpha_us(symbol) )
             {
                 // context.currentSymbol.name.push_back(symbol);
-                return MakeState(sn::IdLvalueRest);
+                return sn::IdLvalueRest;
             }
-            return MakeError("Invalid identifier. Has to begin with alphabetic symbol or underscore.");
+            compilation.AddError("Invalid identifier. Has to begin with alphabetic symbol or underscore.");
+            return nullopt;
         });
 
     pda.RegisterTransition(sn::IdLvalueRest, false,
-        [](char symbol, StackOfChars&, Compilation&) -> TransitionResult
+        [](char symbol, StackOfChars&, Compilation& compilation) -> TransitionResult
         {
             if( helpers::is_alnum_us(symbol) )
             {
                 // context.currentSymbol.name.push_back(symbol);
-                return MakeState(sn::IdLvalueRest);
+                return sn::IdLvalueRest;
             }
             else if( std::isspace(symbol) )
             {
-                return MakeState(sn::LeftWhitespace);
+                return sn::LeftWhitespace;
             }
             else if( symbol == '=' )
             {
-                return MakeState(sn::Q);
+                return sn::Q;
             }
-            return MakeError("Invalid identifier. Has to consist of alphanumeric symbols or underscore.");
+            compilation.AddError("Invalid identifier. Has to consist of alphanumeric symbols or underscore.");
+            return nullopt;
         });
 
     pda.RegisterTransition(sn::LeftWhitespace, false,
-        [](char symbol, StackOfChars&, Compilation&) -> TransitionResult
+        [](char symbol, StackOfChars&, Compilation& compilation) -> TransitionResult
         {
             if( std::isspace(symbol) )
             {
-                return MakeState(sn::LeftWhitespace);
+                return sn::LeftWhitespace;
             }
             else if( symbol == '=' )
             {
-                return MakeState(sn::Q);
+                return sn::Q;
             }
-            return MakeError("Only assign \"=\" operator is allowed here.");
+            compilation.AddError("Only assign \"=\" operator is allowed here.");
+            return nullopt;
         });
     pda.RegisterTransition(sn::Q, false,
-        [](char symbol, StackOfChars& stack, Compilation&) -> TransitionResult
+        [](char symbol, StackOfChars& stack, Compilation& compilation) -> TransitionResult
         {
             if( symbol == '(' )
             {
                 stack.emplace('(');
-                return MakeState(sn::Q);
+                return sn::Q;
             }
             else if( std::isspace(symbol) )
             {
-                return MakeState(sn::Q);
+                return sn::Q;
             }
             else if( helpers::is_alpha_us(symbol) )
             {
-                return MakeState(sn::Id);
+                return sn::Id;
             }
             else if( std::isdigit(symbol) )
             {
-                return MakeState(sn::NumInt);
+                return sn::NumInt;
             }
-            return MakeError("Should be an identifier, a number or (.");
+            compilation.AddError("Should be an identifier, a number or (.");
+            return nullopt;
         });
 
     pda.RegisterTransition(sn::Id, true,
-        [](char symbol, StackOfChars& stack, Compilation&) -> TransitionResult
+        [](char symbol, StackOfChars& stack, Compilation& compilation) -> TransitionResult
         {
             if( helpers::is_alnum_us(symbol) )
             {
-                return MakeState(sn::Id);
+                return sn::Id;
             }
             else if( symbol == '*' || symbol == '+' )
             {
-                return MakeState(sn::Q);
+                return sn::Q;
             }
             else if( std::isspace(symbol) )
             {
-                return MakeState(sn::P);
+                return sn::P;
             }
             else if( symbol == ')' && !stack.empty() && stack.top() == '(' )
             {
                 stack.pop();
-                return MakeState(sn::P);
+                return sn::P;
             }
-            return MakeError("Should be an operator or ).");
+            compilation.AddError("Should be an operator or ).");
+            return nullopt;
         });
     pda.RegisterTransition(sn::P, true,
-        [](char symbol, StackOfChars& stack, Compilation&) -> TransitionResult
+        [](char symbol, StackOfChars& stack, Compilation& compilation) -> TransitionResult
         {
             if( std::isspace(symbol) )
             {
-                return MakeState(sn::P);
+                return sn::P;
             }
             else if( symbol == ')' && !stack.empty() && stack.top() == '(' )
             {
                 stack.pop();
-                return MakeState(sn::P);
+                return sn::P;
             }
             else if( symbol == '*' || symbol == '+' )
             {
-                return MakeState(sn::Q);
+                return sn::Q;
             }
-            return MakeError("Should be an operator or ).");
+            compilation.AddError("Should be an operator or ).");
+            return nullopt;
         });
 
     pda.RegisterTransition(sn::NumInt, true,
-        [](char symbol, StackOfChars& stack, Compilation&) -> TransitionResult
+        [](char symbol, StackOfChars& stack, Compilation& compilation) -> TransitionResult
         {
             if( std::isdigit(symbol) )
             {
-                return MakeState(sn::NumInt);
+                return sn::NumInt;
             }
             else if( symbol == '*' || symbol == '+' )
             {
-                return MakeState(sn::Q);
+                return sn::Q;
             }
             else if( symbol == ')' && !stack.empty() && stack.top() == '(' )
             {
                 stack.pop();
-                return MakeState(sn::P);
+                return sn::P;
             }
             else if( std::isspace(symbol) )
             {
-                return MakeState(sn::P);
+                return sn::P;
             }
             else if( symbol == '.' )
             {
-                return MakeState(sn::Dot);
+                return sn::Dot;
             }
             else if( symbol == 'e' || symbol == 'E' )
             {
-                return MakeState(sn::ExpLetter);
+                return sn::ExpLetter;
             }
-            return MakeError("Integer should either be an operator or ) or become a float with E or \".\".");
+            compilation.AddError("Integer should either be followed by an operator or ) or become a float with E or \".\".");
+            return nullopt;
         });
 
     pda.RegisterTransition(sn::Dot, false,
-        [](char symbol, StackOfChars&, Compilation&) -> TransitionResult
+        [](char symbol, StackOfChars&, Compilation& compilation) -> TransitionResult
         {
             if( std::isdigit(symbol) )
             {
-                return MakeState(sn::NumFrac);
+                return sn::NumFrac;
             }
-            return MakeError("Only decimal part of the number is allowed here.");
+            compilation.AddError("Only decimal part of the number is allowed here.");
+            return nullopt;
         });
 
     pda.RegisterTransition(sn::NumFrac, true,
-        [](char symbol, StackOfChars& stack, Compilation&) -> TransitionResult
+        [](char symbol, StackOfChars& stack, Compilation& compilation) -> TransitionResult
         {
             if( std::isdigit(symbol) )
             {
-                return MakeState(sn::NumFrac);
+                return sn::NumFrac;
             }
             else if( symbol == '*' || symbol == '+' )
             {
-                return MakeState(sn::Q);
+                return sn::Q;
             }
             else if( symbol == ')' && !stack.empty() && stack.top() == '(' )
             {
                 stack.pop();
-                return MakeState(sn::P);
+                return sn::P;
             }
             else if( std::isspace(symbol) )
             {
-                return MakeState(sn::P);
+                return sn::P;
             }
             else if( symbol == 'e' || symbol == 'E' )
             {
-                return MakeState(sn::ExpLetter);
+                return sn::ExpLetter;
             }
-            return MakeError("Decimal number should either be an operator or ) or become a scientific with \"e\".");
+            compilation.AddError("Decimal number should either be an operator or ) or become a scientific with \"e\".");
+            return nullopt;
         });
 
     pda.RegisterTransition(sn::ExpLetter, false,
-        [](char symbol, StackOfChars&, Compilation&) -> TransitionResult
+        [](char symbol, StackOfChars&, Compilation& compilation) -> TransitionResult
         {
             if( std::isdigit(symbol) )
             {
-                return MakeState(sn::Exp);
+                return sn::Exp;
             }
             else if( symbol == '+' || symbol == '-' )
             {
-                return MakeState(sn::ExpSign);
+                return sn::ExpSign;
             }
-            return MakeError("Only signs + and - are allowed here.");
+            compilation.AddError("Only signs + and - are allowed here.");
+            return nullopt;
         });
 
     pda.RegisterTransition(sn::ExpSign, false,
-        [](char symbol, StackOfChars&, Compilation&) -> TransitionResult
+        [](char symbol, StackOfChars&, Compilation& compilation) -> TransitionResult
         {
             if( std::isdigit(symbol) )
             {
-                return MakeState(sn::Exp);
+                return sn::Exp;
             }
-            return MakeError("Must be a number.");
+            compilation.AddError("Must be a number.");
+            return nullopt;
         });
 
     pda.RegisterTransition(sn::Exp, true,
-        [](char symbol, StackOfChars& stack, Compilation&) -> TransitionResult
+        [](char symbol, StackOfChars& stack, Compilation& compilation) -> TransitionResult
         {
             if( std::isdigit(symbol) )
             {
-                return MakeState(sn::Exp);
+                return sn::Exp;
             }
             else if( std::isspace(symbol) )
             {
-                return MakeState(sn::P);
+                return sn::P;
             }
             else if( symbol == ')' && !stack.empty() && stack.top() == '(' )
             {
                 stack.pop();
-                return MakeState(sn::P);
+                return sn::P;
             }
             else if( symbol == '*' || symbol == '+' )
             {
-                return MakeState(sn::Q);
+                return sn::Q;
             }
-            return MakeError("Should be an operator or ).");
+            compilation.AddError("Should be an operator or ).");
+            return nullopt;
         });
 }
 
@@ -343,7 +359,7 @@ int main(int argc, char** argv)
     {
         auto programData = ProcessArgs(argc, argv);
 
-        Compilation context;
+        Compilation compilation;
         PushdownAutomaton<Compilation, char> pda;
         RegisterLabOneStates(pda);
 
@@ -359,8 +375,8 @@ int main(int argc, char** argv)
             inputIsAtTerminal = true;
         }
 
-        auto result = pda.ProcessText(input.cbegin(), input.cend(), state_names::Begin, context);
-        std::cout << InterpretPdaResult(input, result, inputIsAtTerminal) << std::endl;
+        auto result = pda.ProcessText(input.cbegin(), input.cend(), state_names::Begin, compilation);
+        std::cout << InterpretPdaResult(input, result, compilation.GetError(0), inputIsAtTerminal) << std::endl;
 
         return 0;
     }
