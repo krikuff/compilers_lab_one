@@ -18,5 +18,10 @@ struct InvalidState : public PdaError
     InvalidState() : PdaError("Attempt to transit to invalid state") {}
 };
 
+struct CompilationError : public std::runtime_error
+{
+    using std::runtime_error::runtime_error;
+};
+
 } // namespace compilers
 } // namespace tusur

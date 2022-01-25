@@ -61,7 +61,7 @@ std::string InterpretPdaResult(std::string& input, PdaResult res, std::optional<
     auto [flags, iter] = res;
     if( flags == PdaFlags::Success )
     {
-        output += "Success";
+        output += "Correct";
         return output;
     }
 
@@ -97,7 +97,7 @@ void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
             }
             else if( helpers::is_alpha_us(symbol) )
             {
-                // context.currentSymbol.name.push_back(symbol);
+                compilation.PushToLexeme(symbol);
                 return sn::IdLvalueRest;
             }
             compilation.AddError("Invalid identifier. Has to begin with alphabetic symbol or underscore.");
@@ -109,15 +109,19 @@ void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
         {
             if( helpers::is_alnum_us(symbol) )
             {
-                // context.currentSymbol.name.push_back(symbol);
+                compilation.PushToLexeme(symbol);
                 return sn::IdLvalueRest;
             }
             else if( std::isspace(symbol) )
             {
+                compilation.CompleteLexeme(LexemeType::Identifier);
                 return sn::LeftWhitespace;
             }
             else if( symbol == '=' )
             {
+                compilation.CompleteLexeme(LexemeType::Identifier);
+                compilation.PushToLexeme(symbol);
+                compilation.CompleteLexeme(LexemeType::Assign);
                 return sn::Q;
             }
             compilation.AddError("Invalid identifier. Has to consist of alphanumeric symbols or underscore.");
@@ -133,6 +137,8 @@ void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
             }
             else if( symbol == '=' )
             {
+                compilation.PushToLexeme(symbol);
+                compilation.CompleteLexeme(LexemeType::Assign);
                 return sn::Q;
             }
             compilation.AddError("Only assign \"=\" operator is allowed here.");
@@ -143,6 +149,9 @@ void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
         {
             if( symbol == '(' )
             {
+                compilation.PushToLexeme(symbol);
+                compilation.CompleteLexeme(LexemeType::OpeningParentheses);
+
                 stack.emplace('(');
                 return sn::Q;
             }
@@ -152,10 +161,12 @@ void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
             }
             else if( helpers::is_alpha_us(symbol) )
             {
+                compilation.PushToLexeme(symbol);
                 return sn::Id;
             }
             else if( std::isdigit(symbol) )
             {
+                compilation.PushToLexeme(symbol);
                 return sn::NumInt;
             }
             compilation.AddError("Should be an identifier, a number or (.");
@@ -167,18 +178,27 @@ void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
         {
             if( helpers::is_alnum_us(symbol) )
             {
+                compilation.PushToLexeme(symbol);
                 return sn::Id;
             }
             else if( symbol == '*' || symbol == '+' )
             {
+                compilation.CompleteLexeme(LexemeType::Identifier);
+                compilation.PushToLexeme(symbol);
+                compilation.CompleteLexeme( (symbol == '*')? LexemeType::MultipliesSign : LexemeType::PlusSign );
                 return sn::Q;
             }
             else if( std::isspace(symbol) )
             {
+                compilation.CompleteLexeme(LexemeType::Identifier);
                 return sn::P;
             }
             else if( symbol == ')' && !stack.empty() && stack.top() == '(' )
             {
+                compilation.CompleteLexeme(LexemeType::Identifier);
+                compilation.PushToLexeme(symbol);
+                compilation.CompleteLexeme(LexemeType::ClosingParentheses);
+
                 stack.pop();
                 return sn::P;
             }
@@ -194,11 +214,17 @@ void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
             }
             else if( symbol == ')' && !stack.empty() && stack.top() == '(' )
             {
+                compilation.PushToLexeme(symbol);
+                compilation.CompleteLexeme(LexemeType::ClosingParentheses);
+
                 stack.pop();
                 return sn::P;
             }
             else if( symbol == '*' || symbol == '+' )
             {
+                compilation.PushToLexeme(symbol);
+                compilation.CompleteLexeme( (symbol == '*')? LexemeType::MultipliesSign : LexemeType::PlusSign );
+
                 return sn::Q;
             }
             compilation.AddError("Should be an operator or ).");
@@ -210,27 +236,38 @@ void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
         {
             if( std::isdigit(symbol) )
             {
+                compilation.PushToLexeme(symbol);
                 return sn::NumInt;
             }
             else if( symbol == '*' || symbol == '+' )
             {
+                compilation.CompleteLexeme(LexemeType::IntegerNumber);
+                compilation.PushToLexeme(symbol);
+                compilation.CompleteLexeme( (symbol == '*')? LexemeType::MultipliesSign : LexemeType::PlusSign );
                 return sn::Q;
             }
             else if( symbol == ')' && !stack.empty() && stack.top() == '(' )
             {
+                compilation.CompleteLexeme(LexemeType::IntegerNumber);
+                compilation.PushToLexeme(symbol);
+                compilation.CompleteLexeme(LexemeType::ClosingParentheses);
+
                 stack.pop();
                 return sn::P;
             }
             else if( std::isspace(symbol) )
             {
+                compilation.CompleteLexeme(LexemeType::IntegerNumber);
                 return sn::P;
             }
             else if( symbol == '.' )
             {
+                compilation.PushToLexeme(symbol);
                 return sn::Dot;
             }
             else if( symbol == 'e' || symbol == 'E' )
             {
+                compilation.PushToLexeme(symbol);
                 return sn::ExpLetter;
             }
             compilation.AddError("Integer should either be followed by an operator or ) or become a float with E or \".\".");
@@ -242,6 +279,7 @@ void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
         {
             if( std::isdigit(symbol) )
             {
+                compilation.PushToLexeme(symbol);
                 return sn::NumFrac;
             }
             compilation.AddError("Only decimal part of the number is allowed here.");
@@ -253,23 +291,34 @@ void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
         {
             if( std::isdigit(symbol) )
             {
+                compilation.PushToLexeme(symbol);
                 return sn::NumFrac;
             }
             else if( symbol == '*' || symbol == '+' )
             {
+                compilation.CompleteLexeme(LexemeType::FloatingPointNumber);
+                compilation.PushToLexeme(symbol);
+                compilation.CompleteLexeme( (symbol == '*')? LexemeType::MultipliesSign : LexemeType::PlusSign );
+
                 return sn::Q;
             }
             else if( symbol == ')' && !stack.empty() && stack.top() == '(' )
             {
+                compilation.CompleteLexeme(LexemeType::FloatingPointNumber);
+                compilation.PushToLexeme(symbol);
+                compilation.CompleteLexeme(LexemeType::ClosingParentheses);
+
                 stack.pop();
                 return sn::P;
             }
             else if( std::isspace(symbol) )
             {
+                compilation.CompleteLexeme(LexemeType::FloatingPointNumber);
                 return sn::P;
             }
             else if( symbol == 'e' || symbol == 'E' )
             {
+                compilation.PushToLexeme(symbol);
                 return sn::ExpLetter;
             }
             compilation.AddError("Decimal number should either be an operator or ) or become a scientific with \"e\".");
@@ -281,10 +330,12 @@ void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
         {
             if( std::isdigit(symbol) )
             {
+                compilation.PushToLexeme(symbol);
                 return sn::Exp;
             }
             else if( symbol == '+' || symbol == '-' )
             {
+                compilation.PushToLexeme(symbol);
                 return sn::ExpSign;
             }
             compilation.AddError("Only signs + and - are allowed here.");
@@ -296,6 +347,7 @@ void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
         {
             if( std::isdigit(symbol) )
             {
+                compilation.PushToLexeme(symbol);
                 return sn::Exp;
             }
             compilation.AddError("Must be a number.");
@@ -307,24 +359,57 @@ void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
         {
             if( std::isdigit(symbol) )
             {
+                compilation.PushToLexeme(symbol);
                 return sn::Exp;
             }
             else if( std::isspace(symbol) )
             {
+                compilation.CompleteLexeme(LexemeType::FloatingPointNumber);
                 return sn::P;
             }
             else if( symbol == ')' && !stack.empty() && stack.top() == '(' )
             {
+                compilation.CompleteLexeme(LexemeType::FloatingPointNumber);
+                compilation.PushToLexeme(symbol);
+                compilation.CompleteLexeme(LexemeType::ClosingParentheses);
+
                 stack.pop();
                 return sn::P;
             }
             else if( symbol == '*' || symbol == '+' )
             {
+                compilation.CompleteLexeme(LexemeType::FloatingPointNumber);
+                compilation.PushToLexeme(symbol);
+                compilation.CompleteLexeme( (symbol == '*')? LexemeType::MultipliesSign : LexemeType::PlusSign );
+
                 return sn::Q;
             }
             compilation.AddError("Should be an operator or ).");
             return nullopt;
         });
+
+    pda.SetFinalizer( [](char, std::string const& prevState, StackOfChars&, Compilation& compilation)
+    {
+        // TODO: очень грязный код, отрефакторить
+        auto lexemeType = LexemeType::Assign;
+        if( prevState == sn::Id )
+        {
+            lexemeType = LexemeType::Identifier;
+        }
+        else if( prevState == sn::NumInt )
+        {
+            lexemeType = LexemeType::IntegerNumber;
+        }
+        else if( prevState == sn::NumFrac || prevState == sn::Exp )
+        {
+            lexemeType = LexemeType::FloatingPointNumber;
+        } // еще из конечных состояний есть P, но перед ним лексемы всегда коммитятся в compilation
+
+        if( lexemeType != LexemeType::Assign )
+        {
+            compilation.CompleteLexeme(lexemeType);
+        }
+    });
 }
 
 struct ProgramData
@@ -338,7 +423,7 @@ ProgramData ProcessArgs(int argc, char** argv)
     for( int i = 1; i < argc; ++i )
     {
         std::string arg(argv[i]);
-        // обработка -h и прочих
+        // TODO: обработка -h и прочих
 
         if( !data.inputFile.is_open() )
         {
@@ -376,7 +461,16 @@ int main(int argc, char** argv)
         }
 
         auto result = pda.ProcessText(input.cbegin(), input.cend(), state_names::Begin, compilation);
+
+        if( result.flags == Success ) // TODO: переписать чисто
+        {
+            compilation.GenerateRemainingCode();
+        }
         std::cout << InterpretPdaResult(input, result, compilation.GetError(0), inputIsAtTerminal) << std::endl;
+        if( result.flags == Success )
+        {
+            std::cout << "Code:\n" << compilation.GetCode() << std::endl;
+        }
 
         return 0;
     }

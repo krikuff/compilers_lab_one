@@ -44,13 +44,16 @@ class PushdownAutomaton
         bool isFinal;
     };
     using StateMap = std::map<std::string, State>;
+    using Finalizer = std::function<void( char, std::string const&, std::stack<I>&, C& )>; // TODO: некрасиво дублируются параметры тут и в Transition
 
 public:
-    // @brief Регистрация состояния автомата
-    // @param from Имя состояния
-    // @param isFinal конечное ли состояние TODO: переделать на enum, чтоб понятно было читать вызов
-    // @param transition функция перехода
+    ///@brief Регистрация состояния автомата
+    ///@param from Имя состояния
+    ///@param isFinal конечное ли состояние TODO: переделать на enum, чтоб понятно было читать вызов
+    ///@param transition функция перехода
     typename StateMap::iterator RegisterTransition(std::string const& from, bool isFinal, Transition<C, I>&& transition);
+
+    void SetFinalizer(Finalizer&& finalizer);
 
     // @brief Обработать текст автоматом
     // @param textBegin Итератор начала строки входных данных // TODO: неконсистентно как-то. Перейти бы везде на ranges
@@ -68,6 +71,7 @@ private:
 private:
     std::stack<I> stack_;
     StateMap states_;
+    Finalizer finalizer_;
     typename StateMap::iterator currentState_;
 };
 
@@ -79,6 +83,12 @@ typename PushdownAutomaton<C, I>::StateMap::iterator
 PushdownAutomaton<C, I>::RegisterTransition(std::string const& from, bool isFinal, Transition<C, I>&& transition)
 {
     return states_.emplace(std::pair{ from, State{std::move(transition), isFinal} }).first;
+}
+
+template<typename C, typename I>
+void PushdownAutomaton<C, I>::SetFinalizer(Finalizer&& finalizer)
+{
+    finalizer_ = std::move( finalizer );
 }
 
 template<typename C, typename I>
@@ -125,6 +135,10 @@ PdaResult PushdownAutomaton<C, I>::ProcessText(std::string::const_iterator textB
     if( currentSymbol != textEnd )
     {
         ret |= EndOfTextNotReached;
+    }
+    else
+    {
+        finalizer_(*(textEnd - 1), currentState_->first, stack_, context);
     }
     if( !currentState_->second.isFinal )
     {
