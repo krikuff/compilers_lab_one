@@ -462,7 +462,7 @@ int main(int argc, char** argv)
 
         auto result = pda.ProcessText(input.cbegin(), input.cend(), state_names::Begin, compilation);
 
-        if( result.flags == Success ) // TODO: переписать чисто
+        if( result.flags == Success ) // TODO: грязный код, переписать чисто
         {
             compilation.GenerateRemainingCode();
         }

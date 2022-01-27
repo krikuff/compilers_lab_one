@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bitset>
 #include <stack>
 #include <string>
 #include <unordered_map>
@@ -9,6 +10,8 @@ namespace tusur
 {
 namespace compilers
 {
+
+#define MAX_REGISTER_COUNT 16
 
 ///@brief Тип лексемы
 ///
@@ -25,7 +28,15 @@ enum LexemeType
     Identifier,
 };
 
-struct Compilation
+std::string LexemeTypeToString(LexemeType type);
+
+struct Operation
+{
+    std::string code;
+    std::bitset<MAX_REGISTER_COUNT> registersUsed;
+};
+
+class Compilation
 {
 public:
     void PushToLexeme(char symbol);
@@ -51,7 +62,7 @@ private:
 private:
     std::string currentLexeme_;
     std::unordered_map<std::string, LexemeType> symbolTable_;
-    std::stack<std::string> codeStack_;
+    std::stack<Operation> codeStack_;
     std::stack<LexemeType> opStack_; // FIXME: как-то неправильно тут держать тип лексемы, но работает пока
     std::vector<std::string> errors_;
 

@@ -10,6 +10,38 @@ namespace compilers
 namespace
 {
 
+std::string OperatoinCode(LexemeType operation, std::string const& lhs, std::string const& rhs, int Register)
+{
+    // TODO: код формируется прямо как в презентации, не очень интуитивно. Подумать над способами лучше
+    std::string code;
+    const auto RegisterName = std::to_string(Register);
+    switch( operation )
+    {
+        case Assign:
+            code += "LOAD " + rhs
+                 + "\nSTORE " + lhs;
+            break;
+        case PlusSign:
+            code += rhs
+                 + "\nSTORE $" + RegisterName
+                 + "\nLOAD " + lhs
+                 + "\nADD $" + RegisterName;
+            break;
+        case MultipliesSign:
+            code += rhs
+                 + "\nSTORE $" + RegisterName
+                 + "\nLOAD " + lhs
+                 + "\nMPY $" + RegisterName;
+            break;
+        default:
+            throw CompilationError("Unknown operation: " + LexemeTypeToString(operation));
+            break;
+    }
+    return code;
+}
+
+} // namespace anonymous
+
 std::string LexemeTypeToString(LexemeType type)
 {
     using enum LexemeType;
@@ -36,34 +68,6 @@ std::string LexemeTypeToString(LexemeType type)
     }
 }
 
-std::string OperatoinCode(LexemeType operation, std::string const& lhs, std::string const& rhs, int Register)
-{
-    // TODO: код формируется прямо как в презентации, не очень интуитивно. Подумать над способами лучше
-    std::string code;
-    const auto RegisterName = std::to_string(Register);
-    switch( operation )
-    {
-        case Assign:
-            code += "LOAD " + rhs + "\nSTORE " + lhs;
-            break;
-        case PlusSign:
-            code += rhs
-                 + "\nSTORE $" + RegisterName
-                 + "\nLOAD " + lhs
-                 + "\nADD $" + RegisterName;
-            break;
-        case MultipliesSign:
-            code += rhs + "\nSTORE $" + RegisterName + "\nLOAD " + lhs + "\nMPY $" + RegisterName;
-            break;
-        default:
-            throw CompilationError("Unknown operation: " + LexemeTypeToString(operation));
-            break;
-    }
-    return code;
-}
-
-} // namespace anonymous
-
 void Compilation::PushToLexeme(char symbol)
 {
     currentLexeme_.push_back(symbol);
@@ -80,7 +84,7 @@ void Compilation::CompleteLexeme(LexemeType type)
         case IntegerNumber:
         case FloatingPointNumber:
         {
-            codeStack_.push(lexeme->first);
+            codeStack_.push({ lexeme->first, std::bitset<MAX_REGISTER_COUNT>() });
             break;
         }
 
@@ -130,15 +134,20 @@ void Compilation::CompleteLexeme(LexemeType type)
 
 void Compilation::GenerateCodeOnce()
 {
-    int treeLevel = opStack_.size(); // можно брать номер уровня не снизу дерева, а сверху
     auto opType = opStack_.top();
     opStack_.pop();
-    auto rhs = codeStack_.top();
+    auto [rhs, rhsRegisters] = codeStack_.top();
     codeStack_.pop();
-    auto lhs = codeStack_.top();
+    auto [lhs, lhsRegisters] = codeStack_.top();
     codeStack_.pop();
 
-    codeStack_.push( OperatoinCode(opType, lhs, rhs, treeLevel) );
+    // TODO: выбор регистра можно оптимизировать, если увидеть, что те регистры, что были использованы в
+    // rhs, всегда можно переиспользовать
+
+    auto usedRegisters = lhsRegisters | rhsRegisters;
+    int availableRegister = usedRegisters.count();
+    usedRegisters |= 1 << availableRegister;
+    codeStack_.push({ OperatoinCode(opType, lhs, rhs, availableRegister), usedRegisters });
 }
 
 void Compilation::GenerateRemainingCode()
@@ -151,7 +160,7 @@ void Compilation::GenerateRemainingCode()
 
 std::string Compilation::GetCode() const
 {
-    return codeStack_.top();
+    return codeStack_.top().code;
 }
 
 void Compilation::AddError(std::string&& err)
