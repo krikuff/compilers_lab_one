@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <iostream>
 #include <fstream>
 
@@ -415,6 +416,7 @@ void RegisterLabOneStates(PushdownAutomaton<Compilation, char>& pda)
 struct ProgramData
 {
     std::fstream inputFile;
+    // TODO: добавить файл вывода с опцией -o
 };
 
 ProgramData ProcessArgs(int argc, char** argv)
@@ -462,14 +464,22 @@ int main(int argc, char** argv)
 
         auto result = pda.ProcessText(input.cbegin(), input.cend(), state_names::Begin, compilation);
 
-        if( result.flags == Success ) // TODO: грязный код, переписать чисто
+        if( result.flags == Success ) // TODO: очень грязный наколеночный код, переписать чисто
         {
             compilation.GenerateRemainingCode();
         }
+
         std::cout << InterpretPdaResult(input, result, compilation.GetError(0), inputIsAtTerminal) << std::endl;
+
         if( result.flags == Success )
         {
-            std::cout << "Code:\n" << compilation.GetCode() << std::endl;
+            std::cout << "\nCode:\n" << compilation.GetCode() << std::endl;
+            auto symbolTable = compilation.GetSymbolTable();
+            std::cout << "\nSymbol table:\n";
+            std::for_each(symbolTable.begin(), symbolTable.end(), [](auto& symbol)
+            {
+                std::cout << "\t" << LexemeTypeToString(symbol.second) << " " << symbol.first << "\n";
+            });
         }
 
         return 0;

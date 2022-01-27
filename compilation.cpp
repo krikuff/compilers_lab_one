@@ -177,5 +177,10 @@ std::optional<std::string> Compilation::GetError(size_t idx) const
     return errors_[idx];
 }
 
+std::unordered_map<std::string, LexemeType> Compilation::GetSymbolTable() const
+{
+    return symbolTable_;
+}
+
 } // namespace compilers
 } // namespace tusur

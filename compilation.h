@@ -55,6 +55,8 @@ public:
     ///@returns std::nullopt если ошибок нет, либо если нет ошибки под таким индексом, иначе ошибку
     std::optional<std::string> GetError(size_t idx) const;
 
+    std::unordered_map<std::string, LexemeType> GetSymbolTable() const;
+
 private:
     // Сгенерировать код на стеках без проверок стеков
     void GenerateCodeOnce();
